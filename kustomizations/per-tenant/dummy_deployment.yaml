@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dummy
+  labels:
+    app.kubernetes.io/name: "dummy"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: "dummy"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: "dummy"
+        app.kubernetes.io/name: "dummy"
+    spec:
+      containers:
+      - name: dummy
+        image: alpine:latest
+        command: ["/bin/sh"]
+        # flux kustomize-controller will substitute all instances of
+        # ${{PER_TENANT_SUBST}} in the manifests that get deployed. Of course
+        # you should prefer to use the proper, cleaner methods where possible,
+        # like envFrom and configMapRef, volume bindings for secrets and
+        # configmaps, etc. But for this demo we just need to illustrate that
+        # the per-tenant config got applied.
+        args: ["-c", "echo '${PER_TENANT_SUBST}'; if [ '${PER_TENANT_SUBST}' = '$''{''PER_TENANT_SUBST''}' ]; then echo 1>&2 'no substitution applied?!'; exit 1; else echo 1>&2 'subst seems to have been applied ok'; env | grep SUBST; sleep inf; fi"]
