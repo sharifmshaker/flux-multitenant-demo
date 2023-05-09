@@ -132,7 +132,7 @@ def tenant_delete(args):
                 tenant_ns_name = nslist.items[0].metadata.name
                 assert((tenant_ns_name == args.tenant_namespace) or (not args.tenant_namespace))
                 api_instance.delete_namespace(tenant_ns_name)
-                print(f"Namespace {args.tenant_namespace} deletion requested", file=sys.stderr)
+                print(f"Namespace {tenant_ns_name} deletion requested", file=sys.stderr)
             elif len(nslist.items) > 1:
                 raise RuntimeError("too many matches for selector")
             else:
