@@ -172,3 +172,120 @@ manifest.
 The substitutions step will replace the `${PER_TENANT_SUBST}` and any other
 `${VAR_REFS}` in the manifest with values obtained from the tenant's
 flux Kustomization postbuild substitutions.
+
+The resulting `Pod` for tenant with namespace `foo` and name `sometenant` looks
+like:
+
+```
+$ kubectl get pod -n foo -oyaml | yq -r '.items[].spec.containers[0]|{"command":.command, "args":.args, "env":.env}' 
+command:
+  - /bin/sh
+args:
+  - -c
+  - echo 'This tenant name is "sometenant"'; if [ 'This tenant name is "sometenant"' = '$''{''PER_TENANT_SUBST''}' ]; then echo 1>&2 'no substitution applied?!'; exit 1; else echo 1>&2 'subst seems to have been applied ok'; env | grep SUBST; sleep inf; fi
+env:
+  - name: SUBST_LITERAL
+    value: tenantname
+```
+
+
+### Sample manifests for a tenant
+
+Given tenant namespace `foo` with tenant name `sometenant`
+
+#### Created by `ctrl tenant add`
+
+the `ctrl tenant add` command will deploy:
+
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: foo
+    tenant-name: sometenant
+  name: foo
+spec: {}
+```
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenant-vars
+  namespace: foo
+data:
+  PER_TENANT_SUBST: This tenant name is "sometenant"
+```
+
+and a `Kustomization` rsrc based on
+[`tenant-flux-kustomization-template.yaml`](./tenant-flux-kustomization-template.yaml):
+
+```yaml
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: dummy
+  namespace: foo
+spec:
+  force: false
+  interval: 5m
+  path: ./kustomizations/per-tenant
+  postBuild:
+    substitute:
+      SUBST_LITERAL: sometenant
+    substituteFrom:
+    - kind: ConfigMap
+      name: tenant-vars
+      optional: false
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: default
+    namespace: flux-system
+  targetNamespace: foo
+```
+
+#### Created by flux kustomize controller
+
+Then fluxcd will reconcile to deploy a templated version of
+[`kustomizations/per-tenant/dummy_deployment.yaml`](./kustomizations/per-tenant/dummy_deployment.yaml):
+
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: dummy
+    kustomize.toolkit.fluxcd.io/name: dummy
+    kustomize.toolkit.fluxcd.io/namespace: foo
+  name: dummy
+  namespace: foo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: dummy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: dummy
+        app.kubernetes.io/name: dummy
+    spec:
+      containers:
+      - args:
+        - -c
+        - echo 'This tenant name is "sometenant"'; if [ 'This tenant name is "sometenant"'
+          = '$''{''PER_TENANT_SUBST''}' ]; then echo 1>&2 'no substitution applied?!';
+          exit 1; else echo 1>&2 'subst seems to have been applied ok'; env | grep
+          SUBST; sleep inf; fi
+        command:
+        - /bin/sh
+        env:
+        - name: SUBST_LITERAL
+          value: sometenant
+        image: alpine:latest
+        name: dummy
+```
+
+and the `Deployment` will create an appropriate `Pod`.
