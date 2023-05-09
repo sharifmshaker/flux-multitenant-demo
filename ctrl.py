@@ -61,7 +61,7 @@ def tenant_add(args):
         # Override any metadata.namespace on deployed resources
         flux_kustomization['spec']['targetNamespace'] = args.tenant_namespace
         # Define the variable substitutions we want to apply literally
-        flux_kustomization['spec']['postBuild']['substitute']['SUBST_LITERAL'] == args.tenant_name
+        flux_kustomization['spec']['postBuild']['substitute']['SUBST_LITERAL'] = args.tenant_name
     
         with kubernetes.client.ApiClient(configuration) as api_client:
             api_instance = kubernetes.client.CoreV1Api(api_client)
