@@ -93,11 +93,19 @@ resource to deploy the dummy app into that namespace.
 Roughly equivalent to
 
 ```sh
-kubectl create namespace tenant-namespace -l tenant-name=tenant-name
+kubectl create namespace tenant-namespace -l flux-multitenant-demo.ringerc.github.com/tenant-name=tenant-name
 
 kubectl create configmap -n tenant-namespace \\
         --from-literal=PER_TENANT_SUBST='This tenant name is "tenant-name"' \\
         tenant-vars
+
+# These steps for flux tenant are currently optional; it's what the script does, but
+# does not appear to have the desired effect yet
+flux create tenant foo --with-namespace foo --export > flux-tenant.yaml
+kubectl label namespace \
+  tenant-namespace kubernetes.io/metadata.name=baz,toolkit.fluxcd.io/tenant=tenant-namespace
+kfilt --kind=ServiceAccount < flux-tenant.yaml | kubectl apply -f -
+kfilt --kind=RoleBinding < flux-tenant.yaml | kubectl apply -f -
 
 flux create ks dummy \
         --namespace tenant-namespace \
@@ -159,6 +167,9 @@ When a tenant is created, the `ctrl tenant add` command creates:
 * a namespace `{{tenantns}}` for the tenant, with a `tenant-name={{tenantname}}` label
 * a `ConfigMap` named `tenant-vars` in that namespace, with a single key
   `PER_TENANT_SUBST: This tenant name is "{{tenantname}}"`
+* a `ServiceAccount` and `RoleBinding` giving the flux kustomize controller
+  access to the namespace when applying Kustomization resources under that
+  namespace
 * a fluxcd `Kustomization` resource in that namespace that defines where to get the
   sources, how to transform them etc
 
@@ -224,7 +235,7 @@ kind: Namespace
 metadata:
   labels:
     kubernetes.io/metadata.name: foo
-    tenant-name: sometenant
+    flux-multitenant-demo.ringerc.github.com/tenant-name: sometenant
   name: foo
 spec: {}
 ```
@@ -237,6 +248,39 @@ metadata:
   namespace: foo
 data:
   PER_TENANT_SUBST: This tenant name is "sometenant"
+```
+
+a `ServiceAccount` and `RoleBinding` that match what `flux create tenant` would do:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    toolkit.fluxcd.io/tenant: tenant-namespace
+  name: tenant-namespace
+  namespace: tenant-namespace
+```
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    toolkit.fluxcd.io/tenant: tenant-namespace
+  name: tenant-namespace-reconciler
+  namespace: tenant-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: gotk:tenant-namespace:reconciler
+- kind: ServiceAccount
+  name: tenant-namespace
+  namespace: tenant-namespace
 ```
 
 and a `Kustomization` rsrc based on
@@ -311,7 +355,9 @@ spec:
 
 and the `Deployment` will create an appropriate `Pod`.
 
-## Integrating flux tenants
+## Integrating flux tenants for confinement and RBAC
+
+This is WIP.
 
 The [`flux create tenant` command](https://fluxcd.io/flux/cmd/flux_create_tenant/) is rather under-documented.
 
@@ -363,4 +409,18 @@ subjects:
 
 Looks like this is intended to confine what kustomizations can do within a namespace.
 
-Lets try integrating this into the demo.
+I've tried adding these to the demo, but presumably I then have to configure
+the flux kustomize controller to have lower default privs. Currently if I
+deploy
+
+```yaml
+flux create ks wrong-namespace --namespace baz --source=GitRepository/default.flux-system --prune --path=./kustomizations/wrong-namespace
+```
+
+then I still get a successful reconciliation
+
+```
+$ kubectl get configmap -n default wrong-namespace
+NAME              DATA   AGE
+wrong-namespace   1      9m51s
+```

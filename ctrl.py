@@ -61,7 +61,9 @@ def tenant_add(args):
         # things with pruning and flux ownership can happen. They should omit
         # metadata.namespace on all resources but we'll override that anyway.
         flux_kustomization['metadata']['namespace'] = args.tenant_namespace
-        # Override any metadata.namespace on deployed resources
+        # setting a targetNamespace at flux Kustomization level means we don't
+        # have to worry about munging all the manifests to individually point
+        # to the desired namespace.
         flux_kustomization['spec']['targetNamespace'] = args.tenant_namespace
         # Define the variable substitutions we want to apply literally
         flux_kustomization['spec']['postBuild']['substitute']['SUBST_LITERAL'] = args.tenant_name
@@ -154,8 +156,6 @@ def tenant_list(args):
         nslist = api_instance.list_namespace(label_selector=tenant_name_label)
         print("{:40} {:40} {}".format("NAMESPACE", "NAME", "NS-STATUS"))
         for ns in nslist.items:
-            import pprint
-            pprint.pprint(ns)
             print("{:40} {:40} {}".format(ns.metadata.name, ns.metadata.labels[tenant_name_label], ns.status.phase))
 
 def tenant_delete(args):
