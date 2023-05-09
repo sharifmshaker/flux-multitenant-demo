@@ -69,10 +69,57 @@ Install fluxcd into the kube cluster and create the flux GitRepository source
 Create a new namespace, tenant-specific ConfigMap in the namespace, and flux Kustomization
 resource to deploy the dummy app into that namespace.
 
+Roughly equivalent to
+
+```sh
+kubectl create namespace tenant-namespace -l tenant-name=tenant-name
+
+kubectl create configmap -n tenant-namespace \\
+        --from-literal=PER_TENANT_SUBST='This tenant name is "tenant-name"' \\
+        tenant-vars
+
+flux create ks dummy \
+        --namespace tenant-namespace \
+        --target-namespace=tenant-namespace \
+        --source=GitRepository/default.flux-system \
+        --prune \
+        --path=./kustomizations/per-tenant \
+        --export > flux-ks-manifest.yaml
+
+yq -i '.spec.postBuild={
+		"substitute":{
+			"SUBST_LITERAL":"This tenant name is tenant-name"
+		},
+		"substituteFrom":[
+			{"kind":"ConfigMap","name":"tenant-vars"}
+		]
+	}' flux-ks-manifest.yaml
+
+kubectl apply -f flux-ks-manifest.yaml
+```
+
 ### tenant list
 
-List all tenant namespaces
+List all tenant namespaces. Equivalent to
+
+```sh
+kubectl get namespace -l 'tenant-name'
+```
 
 ### tenant delete
 
-Delete a namespace containing a tenant app
+Delete a namespace containing a tenant app.
+
+With `--tenant-namespace`, equivalent to:
+
+```sh
+kubectl delete namespace tenant-namespace
+```
+
+or with `--tenant-name`:
+
+```sh
+kubectl delete namespace -l tenant-name=foo
+```
+
+## How it works

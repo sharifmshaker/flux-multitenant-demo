@@ -46,8 +46,10 @@ def bootstrap(args):
     subprocess.run(create_src_cmd, check=True)
 
 def tenant_add(args):
-    """Implement 'ctrl tenant add', which creates a kube namespace and a
-    kustomization resource to deploy the 'dummy' app in that namespace."""
+    """
+    Implement 'ctrl tenant add', which creates a kube namespace and a
+    kustomization resource to deploy the 'dummy' app in that namespace.
+    """
     configuration = kubernetes.config.load_kube_config()
     with open("tenant-flux-kustomization-template.yaml") as f:
         flux_kustomization = yaml.load(f, Loader=yaml.SafeLoader)
@@ -96,23 +98,40 @@ def tenant_add(args):
 
 
 def tenant_list(args):
-    """List all tenants, by finding namespaces with tenant-name label"""
+    """List all tenants, by finding namespaces with tenant-name label.
+    """
     configuration = kubernetes.config.load_kube_config()
     with kubernetes.client.ApiClient(configuration) as api_client:
         api_instance = kubernetes.client.CoreV1Api(api_client)
         nslist = api_instance.list_namespace(label_selector='tenant-name')
-        print("{:40} {}".format("NAMESPACE", "NAME"))
+        print("{:40} {:40} {}".format("NAMESPACE", "NAME", "NS-STATUS"))
         for ns in nslist.items:
-            print("{:40} {}".format(ns.metadata.name, ns.metadata.labels['tenant-name']))
+            import pprint
+            pprint.pprint(ns)
+            print("{:40} {:40} {}".format(ns.metadata.name, ns.metadata.labels['tenant-name'], ns.status.phase))
 
 def tenant_delete(args):
-    """Delete a tenant kustomization resource"""
+    """Delete a tenant kustomization resource.
+    """
+    if not (args.tenant_namespace or args.tenant_name):
+        print("--tenant-namespace and/or --tenant-name must be specified", file=sys.stderr)
+        sys.exit(1)
     configuration = kubernetes.config.load_kube_config()
     with kubernetes.client.ApiClient(configuration) as api_client:
             api_instance = kubernetes.client.CoreV1Api(api_client)
-            nslist = api_instance.list_namespace(field_selector='metadata.name='+args.tenant_namespace, label_selector='tenant-name')
+            if args.tenant_namespace:
+                field_selector='metadata.name='+args.tenant_namespace
+            else:
+                field_selector=None
+            if args.tenant_name:
+                label_selector='tenant-name='+args.tenant_name
+            else:
+                label_selector='tenant-name'
+            nslist = api_instance.list_namespace(field_selector=field_selector, label_selector=label_selector)
             if len(nslist.items) == 1:
-                api_instance.delete_namespace(args.tenant_namespace)
+                tenant_ns_name = nslist.items[0].metadata.name
+                assert((tenant_ns_name == args.tenant_namespace) or (not args.tenant_namespace))
+                api_instance.delete_namespace(tenant_ns_name)
                 print(f"Namespace {args.tenant_namespace} deletion requested", file=sys.stderr)
             elif len(nslist.items) > 1:
                 raise RuntimeError("too many matches for selector")
@@ -159,7 +178,8 @@ def main():
     tenant_add_parser.set_defaults(func=tenant_add)
 
     tenant_delete_parser = tenant_subparsers.add_parser('delete')
-    tenant_delete_parser.add_argument("--tenant-namespace", required=True)
+    tenant_delete_parser.add_argument("--tenant-namespace")
+    tenant_delete_parser.add_argument("--tenant-name")
     tenant_delete_parser.set_defaults(func=tenant_delete)
 
     tenant_list_parser = tenant_subparsers.add_parser('list')
