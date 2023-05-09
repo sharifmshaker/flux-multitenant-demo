@@ -11,6 +11,27 @@ with the current-at-time-of-writing fluxcd
 [v0.41.0](https://github.com/fluxcd/flux2/releases/tag/v0.41.2)
 or on [v2.0.0-rc.1](https://github.com/fluxcd/flux2/releases/tag/v2.0.0-rc.1).
 
+Here's how it looks
+
+```
+$ ./ctrl.py tenant add --tenant-namespace tenant81 --tenant-name "anothertenant"
+Tenant created. Run "flux get ks --namespace tenant81" for status
+
+$ flux --namespace tenant81 get ks
+NAME 	REVISION          	SUSPENDED	READY	MESSAGE                              
+dummy	main@sha1:0a861c8e	False    	True 	Applied revision: main@sha1:0a861c8e	
+
+$ flux --namespace tenant81 tree ks dummy                     
+Kustomization/tenant81/dummy
+└── Deployment/tenant81/dummy
+
+$ kubectl --namespace tenant81 get deployment/dummy -oyaml | yq '.spec.template.spec.containers[].env'
+- name: SUBST_LITERAL
+  value: anothertenant
+```
+
+See [How It Works](#how-it-works) for details.
+
 ## Run the demo
 
 [Install the `flux` CLI](https://fluxcd.io/flux/installation/#install-the-flux-cli).
