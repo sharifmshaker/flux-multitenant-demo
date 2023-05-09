@@ -20,9 +20,14 @@ spec:
         image: alpine:latest
         command: ["/bin/sh"]
         # flux kustomize-controller will substitute all instances of
-        # ${{PER_TENANT_SUBST}} in the manifests that get deployed. Of course
+        # ${PER_TENANT_SUBST} in the manifests that get deployed. Of course
         # you should prefer to use the proper, cleaner methods where possible,
         # like envFrom and configMapRef, volume bindings for secrets and
         # configmaps, etc. But for this demo we just need to illustrate that
         # the per-tenant config got applied.
         args: ["-c", "echo '${PER_TENANT_SUBST}'; if [ '${PER_TENANT_SUBST}' = '$''{''PER_TENANT_SUBST''}' ]; then echo 1>&2 'no substitution applied?!'; exit 1; else echo 1>&2 'subst seems to have been applied ok'; env | grep SUBST; sleep inf; fi"]
+        env:
+          # fluxcd will replace this too. You should prefer to use configmap
+          # refs etc rather than this, but this helps illustrate how it works.
+          - name: SUBST_LITERAL
+            value: '${SUBST_LITERAL}'

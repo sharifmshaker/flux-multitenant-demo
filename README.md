@@ -123,3 +123,52 @@ kubectl delete namespace -l tenant-name=foo
 ```
 
 ## How it works
+
+Flux's controllers are installed into `flux-system`.
+
+It is configured to look for flux `Kustomization` resources in all namespaces,
+not just the `flux-system` namespace, using the `--watch-all-namespaces` flag
+to `flux install`.
+
+A flux `GitSource` named `default` is created in the `flux-system` namespace. This
+resource watches this repo.
+
+When a tenant is created, the `ctrl tenant add` command creates:
+
+* a namespace `{{tenantns}}` for the tenant, with a `tenant-name={{tenantname}}` label
+* a `ConfigMap` named `tenant-vars` in that namespace, with a single key
+  `PER_TENANT_SUBST: This tenant name is "{{tenantname}}"`
+* a fluxcd `Kustomization` resource in that namespace that defines where to get the
+  sources, how to transform them etc
+
+The per-tenant flux Kustomization has:
+
+* `sourceRef` that points to the `default` `GitRepository` in the `flux-sytem`
+  namespace. You can refer to sources in other namespaces if desired, e.g.
+  per-tenant sources.
+* `path` pointing to `./kustomizations/per-tenant` - which is where the
+  template kustomizations to apply live
+* `targetNamespace` set to `{{tenantnamespace}}` so a tenant kustomization
+  cannot create resources outside its namespace by mistake
+* A `postBuild.substituteFrom` referencing `ConfigMap` `tenant-vars`
+  and a `postBuild.substitute` literal of `SUBST_LITERAL={{tenantname}}`. These
+  are applied as
+  [flux kustomization substitutions](https://fluxcd.io/flux/components/kustomize/kustomization/#post-build-variable-substitution).
+  Secrets are supported too. You should prefer using a configmap over using
+  literals, I've only used one for illustration/demo purposes.
+
+The flux source controller will pull and sync the repo, then the flux kustomize
+controller will reconcile each flux `Kustomization` resource. It will do the
+approximate equivalent of `kustomize build ./kustomizations/per-tenant` then
+apply variable substitutions (a bit like if you `envsubst`'d the built manifests)
+then apply the manifest to the target namespace.
+
+That `kustomize build`-like step in the flux kustomize controller will read
+[`kustomizations/per-tenant/kustomization.yaml`](./kustomizations/per-tenant/kustomization.yaml)
+from the copy of the repo and pull in the
+[`kustomizations/per-tenant/dummy_deployment.yaml`](./kustomizations/per-tenant/dummy_deployment.yaml)
+manifest.
+
+The substitutions step will replace the `${PER_TENANT_SUBST}` and any other
+`${VAR_REFS}` in the manifest with values obtained from the tenant's
+flux Kustomization postbuild substitutions.
