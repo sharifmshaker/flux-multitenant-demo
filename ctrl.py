@@ -13,7 +13,10 @@ import textwrap
 import yaml
 import kubernetes.client
 import kubernetes.config
-from kubernetes.client import V1Namespace, V1ObjectMeta, V1ConfigMap
+from kubernetes.client import V1Namespace, V1ObjectMeta, V1ConfigMap, V1ServiceAccount, V1RoleBinding, V1RoleRef, V1Subject
+
+tenant_name_label = 'flux-multitenant-demo.ringerc.github.com/tenant-name'
+flux_tenant_label = 'toolkit.fluxcd.io/tenant'
 
 def get_git_url():
     """Get the URL of the current git repo"""
@@ -67,10 +70,15 @@ def tenant_add(args):
             api_instance = kubernetes.client.CoreV1Api(api_client)
 
             # create the namespace for this tenant
+            #
+            # The "toolkit.fluxcd.io/tenant" label is used for flux tenant
+            # management like "flux create tenant" uses.
+            #
             nsmeta = V1ObjectMeta(
                     name=args.tenant_namespace,
                     labels={
-                        "tenant-name": args.tenant_name,
+                        tenant_name_label: args.tenant_name,
+                        flux_tenant_label: args.tenant_namespace,
                         }
                     )
             api_instance.create_namespace(V1Namespace(metadata=nsmeta))
@@ -81,6 +89,46 @@ def tenant_add(args):
                         data={"PER_TENANT_SUBST":f'This tenant name is "{args.tenant_name}"'},
                     )
             api_instance.create_namespaced_config_map(args.tenant_namespace, tenant_configmap) 
+
+            # For flux tenant support create a ServiceAccount and RoleBinding. This corresponds
+            # to what "flux create tenant" will do, when combined with the namespace label added
+            # above.
+            service_account = V1ServiceAccount(
+                        metadata=V1ObjectMeta(
+                            name=args.tenant_namespace,
+                            namespace=args.tenant_namespace,
+                            labels={flux_tenant_label: args.tenant_namespace},
+                        ),
+                    )
+            api_instance.create_namespaced_service_account(args.tenant_namespace, service_account)
+
+            rbac_api = kubernetes.client.RbacAuthorizationV1Api(api_client)
+
+            rolebinding = V1RoleBinding(
+                    metadata = V1ObjectMeta(
+                        name = args.tenant_namespace + "-reconciler",
+                        namespace = args.tenant_namespace,
+                        labels = {flux_tenant_label: args.tenant_namespace},
+                    ),
+                    role_ref = V1RoleRef(
+                        api_group = "rbac.authorization.k8s.io",
+                        kind = "ClusterRole", 
+                        name = "cluster-admin",
+                    ),
+                    subjects = [
+                        V1Subject(
+                            api_group = "rbac.authorization.k8s.io",
+                            kind = "User",
+                            name = "gotk:"+args.tenant_namespace+":reconciler",
+                        ),
+                        V1Subject(
+                            kind = "ServiceAccount",
+                            name = args.tenant_namespace,
+                            namespace = args.tenant_namespace,
+                        ),
+                    ],
+                )
+            rbac_api.create_namespaced_role_binding(args.tenant_namespace, rolebinding)
 
             # deploy the flux Kustomization resource, which will load the
             # kustomize kustomizations from the specified path
@@ -103,12 +151,12 @@ def tenant_list(args):
     configuration = kubernetes.config.load_kube_config()
     with kubernetes.client.ApiClient(configuration) as api_client:
         api_instance = kubernetes.client.CoreV1Api(api_client)
-        nslist = api_instance.list_namespace(label_selector='tenant-name')
+        nslist = api_instance.list_namespace(label_selector=tenant_name_label)
         print("{:40} {:40} {}".format("NAMESPACE", "NAME", "NS-STATUS"))
         for ns in nslist.items:
             import pprint
             pprint.pprint(ns)
-            print("{:40} {:40} {}".format(ns.metadata.name, ns.metadata.labels['tenant-name'], ns.status.phase))
+            print("{:40} {:40} {}".format(ns.metadata.name, ns.metadata.labels[tenant_name_label], ns.status.phase))
 
 def tenant_delete(args):
     """Delete a tenant kustomization resource.
@@ -124,9 +172,9 @@ def tenant_delete(args):
             else:
                 field_selector=None
             if args.tenant_name:
-                label_selector='tenant-name='+args.tenant_name
+                label_selector=(tenant_name_label+'='+args.tenant_name)
             else:
-                label_selector='tenant-name'
+                label_selector=tenant_name_label
             nslist = api_instance.list_namespace(field_selector=field_selector, label_selector=label_selector)
             if len(nslist.items) == 1:
                 tenant_ns_name = nslist.items[0].metadata.name

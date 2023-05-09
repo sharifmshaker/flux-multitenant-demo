@@ -310,3 +310,57 @@ spec:
 ```
 
 and the `Deployment` will create an appropriate `Pod`.
+
+## Integrating flux tenants
+
+The [`flux create tenant` command](https://fluxcd.io/flux/cmd/flux_create_tenant/) is rather under-documented.
+
+Its source and output shows it creates a labeled `Namespace`, a
+`ServiceAccount` and a `RoleBinding`:
+
+```sh
+flux create tenant foo --with-namespace foo --export
+```
+
+```yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    toolkit.fluxcd.io/tenant: foo
+  name: foo
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    toolkit.fluxcd.io/tenant: foo
+  name: foo
+  namespace: foo
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    toolkit.fluxcd.io/tenant: foo
+  name: foo-reconciler
+  namespace: foo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: gotk:foo:reconciler
+- kind: ServiceAccount
+  name: foo
+  namespace: foo
+```
+
+Looks like this is intended to confine what kustomizations can do within a namespace.
+
+Lets try integrating this into the demo.
