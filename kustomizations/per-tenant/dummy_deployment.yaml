@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dummy
-  namespace: ${SUBST_LITERAL}
+  namespace: baz
   labels:
     app.kubernetes.io/name: "dummy"
 spec:
