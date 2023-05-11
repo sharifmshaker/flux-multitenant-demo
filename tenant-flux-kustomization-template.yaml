@@ -13,7 +13,7 @@ spec:
   path: "./kustomizations/per-tenant"
   postBuild:
     substitute:
-      SUBST_LITERAL: "default"
+      SUBST_LITERAL: "test-ns"
     substituteFrom:
       - kind: ConfigMap
         name: tenant-vars

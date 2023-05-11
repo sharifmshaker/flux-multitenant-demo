@@ -40,10 +40,11 @@ def bootstrap(args):
         install_cmd.append("--cluster=" + args.cluster)
     subprocess.run(install_cmd, check=True)
 
-    git_url = getattr(args, "git-url", get_git_url()).strip()
+    #git_url = getattr(args, "git-url", get_git_url()).strip()
+    git_url = "https://github.com/sharifmshaker/flux-multitenant-demo.git"
     create_src_cmd = [
             "flux", "create", "source", "git", "default",
-            "--url="+git_url, "--silent", "--branch=main",
+            "--url="+git_url, "--silent", "--branch=test-substitute",
             "--ignore-paths=ctrl.py,README.md",
     ]
     subprocess.run(create_src_cmd, check=True)
